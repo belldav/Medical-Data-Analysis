@@ -17,7 +17,8 @@ def getAllCancerTypes():
     clist = []
     all_cancer_types = cb.Cancer_Types.getAllCancerTypesUsingGET().result()
     for c in all_cancer_types:
-        clist.append(c.name)
+        clist.append((c.name, c.cancerTypeId))
+    
     return clist
 
 # returns the list of all the samples for patients with tumor stage >= 4 (112)
@@ -32,6 +33,7 @@ def getSamples(id):
             if (d.clinicalAttributeId == 'STAGE' and d.value in stages):
                 samples.append(sid)
                 break
+    
     return samples
 
 # returns the list of all the mutations for the specified gene
@@ -42,6 +44,7 @@ def getMutations(geneId, molecularProfile_id, sampleList_id, detail):
                     sampleListId = sampleList_id,
                     projection = detail
                     ).result()
+    
     return mutations
 
 # build the first set of edges (diseases -> patients) of the green graph
@@ -62,6 +65,7 @@ def build_dpGraph(id):
             graph[disease].append(patient)
         patients.add(patient)
         cancer_types.add(disease)
+    
     return graph
 
 # build the second set of edges (patients -> mutations) of the green graph
@@ -83,12 +87,38 @@ def build_pmGraph():
                     graph[pid] = [g]
                 elif (g not in graph[pid]):
                     graph[pid].append(g)
+    
     return graph
+
+def getMutationsfromDisease_union(dpGraph, pmGraph, disease):
+    mutations = set()
+    for p in dpGraph[disease]:
+        for m in pmGraph[p]:
+            mutations.add(m)
+    
+    return mutations
+
+def getMutationsfromDisease_intersect(dpGraph, pmGraph, disease):
+    common_mutations = set()
+    for p in dpGraph[disease]:
+        if not common_mutations:
+            common_mutations = set(pmGraph[p])
+        else:
+            mutations = set(pmGraph[p])
+            common_mutations = common_mutations.intersection(mutations)
+    
+    return common_mutations
+
 
 def main():
     start = time.time()
+    #disease = 'Ovarian Cancer'
     #dpGraph = build_dpGraph(studyId)
     #pmGraph = build_pmGraph()
+    #m_union = getMutationsfromDisease_union(dpGraph, pmGraph, disease)
+    #m_intersect = getMutationsfromDisease_intersect(dpGraph, pmGraph, disease)
+    #print(m_union)
+    #print(m_intersect)
     print("----------", round(time.time() - start, 2), "seconds ----------") # print the execution time
 
 if __name__ == "__main__":
