@@ -1,6 +1,6 @@
 import time # to get program's execution time
-import numpy as np
 import pandas as pd
+import numpy as np
 from bravado.client import SwaggerClient # to access the API
 
 # variables used in API functions for access the data
@@ -18,7 +18,7 @@ def getAllCancerTypes():
     clist = []
     all_cancer_types = cb.Cancer_Types.getAllCancerTypesUsingGET().result()
     for c in all_cancer_types:
-        clist.append(c.name)
+        clist.append(c)
     
     return clist
 
@@ -114,15 +114,23 @@ def getMutationsfromDisease_intersect(dpGraph, pmGraph, disease):
 def main():
     start = time.time()
     #disease = 'Ovarian Cancer'
-    dpGraph = build_dpGraph(studyId)
+    #dpGraph = build_dpGraph(studyId)
     #pmGraph = build_pmGraph()
     #m_union = getMutationsfromDisease_union(dpGraph, pmGraph, disease)
     #m_intersect = getMutationsfromDisease_intersect(dpGraph, pmGraph, disease)
     #print(m_union)
     #print(m_intersect)
-    for c in cancer_types:
-        print(c)
-        print('£')
+    dpGraph = {'Ovarian Cancer': ['DO46336', 'DO46360', 'DO46382', 'DO46394', 'DO46493', 'DO46560'], 
+               'Renal Cell Carcinoma': ['DO47243'], 
+               'Pancreatic Cancer': ['DO48539', 'DO49183', 'DO51180', 'DO51187', 'DO221544', 'DO52123', 'DO52129', 'DO52132', 'DO52136', 'DO52137', 'DO52151', 'DO52159', 'DO52161', 'DO52164', 'DO32976', 'DO35132'], 
+               'Hepatobiliary Cancer': ['DO48717', 'DO48738', 'DO50778', 'DO50780', 'DO50785', 'DO50793', 'DO50806', 'DO50842', 'DO50844', 'DO217864', 'DO218491', 'DO218535', 'DO218695', 'DO23520', 'DO23525', 'DO23529', 'DO23530', 'DO45092', 'DO45131', 'DO45193', 'DO45209', 'DO45221', 'DO45223', 'DO45281', 'DO45297', 'DO45305', 'DO45307'], 
+               'Esophagogastric Cancer': ['DO50316', 'DO50321', 'DO50440', 'DO50447', 'DO50409', 'DO50411', 'DO50330', 'DO50337', 'DO50342', 'DO50354', 'DO50383', 'DO50336', 'DO50436', 'DO224498', 'DO217814', 'DO218442', 'DO217817', 'DO218487', 'DO222288', 'DO218443', 'DO217822', 'DO218223'], 
+               'Prostate Cancer': ['DO52516'], 
+               'Head and Neck Cancer': ['DO217836', 'DO217950', 'DO218012', 'DO218075', 'DO218180', 'DO218211', 'DO218280', 'DO218554', 'DO218697', 'DO218773'], 
+               'Melanoma': ['DO220864', 'DO220883', 'DO220878', 'DO220879', 'DO220874', 'DO220875', 'DO220894', 'DO220877', 'DO220898', 'DO220899', 'DO220901', 'DO220902', 'DO220903', 'DO220904', 'DO220905', 'DO220906', 'DO220907', 'DO220908', 'DO220909', 'DO220910', 'DO220911', 'DO220912', 'DO220913']}
+    df = pd.DataFrame(columns = ['Patient', 'Disease'])
+    df.loc[len(df)] = ['Davide', 'Cancro']
+    print(df)
     print("----------", round(time.time() - start, 2), "seconds ----------") # print the execution time
 
 if __name__ == "__main__":
