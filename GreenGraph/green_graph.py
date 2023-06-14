@@ -3,37 +3,27 @@ import pandas as pd
 import numpy as np
 from bravado.client import SwaggerClient # to access the API
 
-# variables used in API functions for access the data
-cb = SwaggerClient.from_url('https://www.cbioportal.org/api/v2/api-docs',
-                            config={"validate_requests":False,"validate_responses":False,"validate_swagger_spec": False})
-studyId  = 'pancan_pcawg_2020'
-moleculareProfileId = 'pancan_pcawg_2020_mutations'
-sampleListId = 'pancan_pcawg_2020_all'
-
-patients = set() # to store the analysed patients (106)
-cancer_types = set() # to store the analysed cancer types (8)
+# variable used in API functions for access the data
+cb = SwaggerClient.from_url('https://www.cbioportal.org/api/v2/api-docs', config={"validate_requests":False,"validate_responses":False,"validate_swagger_spec": False})
 
 # returns the list of all the cancer types (885)
 def getAllCancerTypes():
     clist = []
     all_cancer_types = cb.Cancer_Types.getAllCancerTypesUsingGET().result()
     for c in all_cancer_types:
-        clist.append(c)
+        clist.append(c.name)
     
     return clist
 
-# returns the list of all the samples for patients with tumor stage >= 4 (112)
-def getSamples(id):
+# given a study id and a disease, returns the list of all the samples for patients with that disease in the specified study
+def getSamples(study_id, disease):
     samples = []
-    stages = ['4', 'IV', 'IVA', 'pT4aN0M0', 'pT4aN1M0', 'pT4aN2bM0', 'T4aN2', 'T4N0M0', 'T4N1', 'T4N1bM1', 'T4N1M0', 'T4N1M1', 'T4N2M0', 'T4N2M1', 'T4N3M0', 'T4NXMX']
-    all_samples = cb.Samples.getAllSamplesInStudyUsingGET(studyId = id).result()
+    all_samples = cb.Samples.getAllSamplesInStudyUsingGET(studyId = study_id).result()
     for s in all_samples:
-        sid = s.sampleId
-        data = cb.Clinical_Data.getAllClinicalDataOfSampleInStudyUsingGET(studyId = id, sampleId = sid).result()
-        for d in data:
-            if (d.clinicalAttributeId == 'STAGE' and d.value in stages):
-                samples.append(sid)
-                break
+        sample_id = s.sampleId
+        data = cb.Clinical_Data.getAllClinicalDataOfSampleInStudyUsingGET(studyId = study_id, sampleId = sample_id, attributeId = 'CANCER_TYPE_DETAILED').result()
+        if (data[0].value == disease):
+            samples.append(sample_id)
     
     return samples
 
@@ -48,89 +38,253 @@ def getMutations(geneId, molecularProfile_id, sampleList_id, detail):
     
     return mutations
 
-# build the first set of edges (diseases -> patients) of the green graph
-def build_dpGraph(id):
-    graph = {}
-    with open("GreenGraph/samples.txt") as file:
-        samples = [line.strip() for line in file]
-    for s in samples:
-        data = cb.Clinical_Data.getAllClinicalDataOfSampleInStudyUsingGET(studyId = id, sampleId = s).result()
-        for d in data:
-            if (d.clinicalAttributeId == 'CANCER_TYPE'):
-                disease = d.value
-                patient = d.patientId
-                break
-        if (disease not in graph):
-            graph[disease] = [patient]
-        elif (patient not in graph[disease]):
-            graph[disease].append(patient)
-        patients.add(patient)
-        cancer_types.add(disease)
-    
-    return graph
+# build the first set of edges (diseases -> patients)
+def build_dpGraph(associations, max_mc = None):
+    #graph = {}
+    df = pd.DataFrame(columns=['Paziente', 'Malattia'])
+    for k, v in associations.items():
+        disease = k
+        study_id = v[0]
+        samples = cb.Samples.getAllSamplesInStudyUsingGET(studyId = study_id).result()
+        for s in samples:
+            sample_id = s.sampleId
+            data_d = cb.Clinical_Data.getAllClinicalDataOfSampleInStudyUsingGET(studyId = study_id, sampleId = sample_id, attributeId = 'CANCER_TYPE_DETAILED').result()
+            d = data_d[0].value
+            if (max_mc):
+                data_mc = cb.Clinical_Data.getAllClinicalDataOfSampleInStudyUsingGET(studyId = study_id, sampleId = sample_id, attributeId = 'MUTATION_COUNT').result()
+                if not data_mc:
+                    continue
+                mc = int(data_mc[0].value)
+                if (mc > max_mc):
+                    continue
+            if (d == disease):
+                p = data_d[0].patientId
+                df.loc[len(df)] = [p, d]
+                #if (d not in graph):
+                    #graph[d] = [p]
+                #elif (p not in graph[d]):
+                    #graph[d].append(p)
 
-# build the second set of edges (patients -> mutations) of the green graph
-def build_pmGraph():
-    graph = {}
+    df.to_excel('dis_pat.xlsx', index=False)
+    #return graph
+
+# build the second set of edges (patients -> mutations)
+def build_pmGraph(associations):
+    #graph = {}
+    dp_df = pd.read_excel('dis_pat.xlsx')
     genes = np.array([])
-    with open("genes.txt") as file:
+    with open("GreenGraph/genes.txt") as file:
         for line in file:
             x = line.strip()
             genes = np.append(genes, x)
+    df = pd.DataFrame(columns=['Paziente', 'Malattia'])
     for g in genes:
         gene = cb.Genes.getGeneUsingGET(geneId = g).result()
-        geneId = gene.entrezGeneId
-        mutations = getMutations(geneId, moleculareProfileId, sampleListId, "ID")
-        for m in mutations:
-            pid = m.patientId
-            if pid in patients:
-                if (pid not in graph):
-                    graph[pid] = [g]
-                elif (g not in graph[pid]):
-                    graph[pid].append(g)
+        gene_id = gene.entrezGeneId
+        for k, v in associations.items():
+            molecularProfile_id = v[1]
+            sampleList_id = v[2]
+            mutations = getMutations(gene_id, molecularProfile_id, sampleList_id, "ID")
+            for m in mutations:
+                p = m.patientId
+                if p in dp_df['Paziente'].values:
+                    if p not in df['Paziente'].values:
+                        df.loc[len(df), 'Paziente'] = p
+                        df.loc[df['Paziente'] == p, 'Malattia'] = k
+                    df.loc[df['Paziente'] == p, g] = 1
+                #if p in dpGraph[k]:
+                    #if (p not in graph):
+                        #graph[p] = [g]
+                    #elif (g not in graph[p]):
+                        #graph[p].append(g)
     
-    return graph
+    df.to_excel('cb_data.xlsx', index=False)
+    #return graph
+
+# get disgenet data for the analysed diseases
+def getDisgenetData():
+    data = []
+    df = pd.read_excel('disgenet_data.xlsx')
+    l = df.to_dict('records')
+    for d in l:
+        dt = dict(d)
+        for k, v in d.items():
+            if type(v) == float and np.isnan(v):
+                del dt[k]
+        data.append(dt)
+
+    data1 = {}
+    for d in data:
+        for k, v in d.items():
+            if k == 'Disease':
+                disease = v
+                data1[disease] = set()
+            else:
+                data1[disease].add(k)
+    
+    return data1
+
+# get cbioportal data in dictionaries to work with it
+def getCbData():
+    data = []
+    df = pd.read_excel('cb_data.xlsx')
+    l = df.to_dict('records')
+    for d in l:
+        dt = dict(d)
+        for k, v in d.items():
+            if type(v) == float and np.isnan(v):
+                del dt[k]
+        data.append(dt)
+    
+    dpGraph = {}
+    pmGraph = {}
+    for d in data:
+        for k, v in d.items():
+            if (k == 'Paziente'):
+                patient = v
+                pmGraph[patient] = list()
+            elif (k == 'Malattia'):
+                disease = v
+                if (disease not in dpGraph):
+                    dpGraph[disease] = [patient]
+                else:
+                    dpGraph[disease].append(patient)
+            else:
+                pmGraph[patient].append(k)
+
+    return (dpGraph, pmGraph)
+
+def cb_toExcel(dpGraph, pmGraph):
+    df = pd.DataFrame(columns=['Paziente', 'Malattia', 'Mutazioni'])
+    for disease, patients in dpGraph.items():
+        for patient in patients:
+            genes = pmGraph.get(patient)
+            if genes:
+                df.loc[len(df)] = [patient, disease, genes]
+
+    df.to_excel('cb_data (better view).xlsx', index=False)
+
+def cb_common_toExcel(dpGraph, pmGraph):
+    df = pd.DataFrame(columns=['Malattia', 'Mutazioni totali', 'Mutazioni in comune'])
+    for disease in list(dpGraph):
+        u = list(getMutationsfromDisease_union(dpGraph, pmGraph, disease))
+        i = list(getMutationsfromDisease_intersect(dpGraph, pmGraph, disease))
+        df.loc[len(df)] = [disease, u, i]
+
+    df.to_excel('cb_data_common.xlsx', index=False)
 
 def getMutationsfromDisease_union(dpGraph, pmGraph, disease):
     mutations = set()
     for p in dpGraph[disease]:
-        for m in pmGraph[p]:
-            mutations.add(m)
+        if p in pmGraph:
+            for m in pmGraph[p]:
+                mutations.add(m)
     
     return mutations
 
 def getMutationsfromDisease_intersect(dpGraph, pmGraph, disease):
     common_mutations = set()
     for p in dpGraph[disease]:
-        if not common_mutations:
-            common_mutations = set(pmGraph[p])
-        else:
-            mutations = set(pmGraph[p])
-            common_mutations = common_mutations.intersection(mutations)
+        if p in pmGraph:
+            if not common_mutations:
+                common_mutations = set(pmGraph[p])
+            else:
+                mutations = set(pmGraph[p])
+                common_mutations = common_mutations.intersection(mutations)
     
     return common_mutations
 
+def getMutationsfromDisease_percentage(dpGraph, pmGraph, disease):
+    dp = {}
+    for p in dpGraph[disease]:
+        if p in pmGraph:
+            for m in pmGraph[p]:
+                if (m not in dp):
+                    dp[m] = 1
+                else:
+                    dp[m] += 1
+
+    n = len(dpGraph[disease])
+    percentages = {}
+    for m, v in dp.items():
+        x = (v / n) * 100
+        percentages[m] = round(x)
+    sorted_d = sorted(percentages.items(), key=lambda x: x[1], reverse=True)
+    
+    return sorted_d
+
+def getRelation(cb_data, ds_data):
+    result = {}
+    for k, v in cb_data.items():
+        Md = ds_data[k]
+        Mu = v[0]
+        Mi = v[1]
+        if (Md == Mi):
+            result[k] = "Md = Mi : la conoscenza medica coincide perfettamente con l'evidenza medica"
+        elif (Md.issubset(Mi)):
+            result[k] = "Md < Mi : la conoscenza medica é incompleta ( ci sono dei geni mutati da ogni paziente con una determinata malattia che non sono noti essere legati a tale malattia"
+        elif (Mi.issubset(Md)):
+            result[k] = "Mi < Md : la conoscenza medica coincide parzialmente con l'evidenza medica ( ci sono dei geni legati a una determinata malattia che non sono mutati in tutti i pazienti con tale malattia)"
+        else:
+            result[k] = "Md e Mi sono scorrelati"
+    return result
+
+def allData_toExcel(dpGraph, pmGraph, ds_data):
+    df2 = pd.DataFrame(columns=['Malattia', 'N.pazienti', 'Geni mutati da almeno un paziente', 'N. geni mutati da almeno un paziente', 
+                                'Geni mutati da tutti i pazienti', 'Geni noti in Disgenet', 'N. geni noti in DisGeNET', 
+                                'Geni mutati in comune tra i db', 'Confronto'])
+    cb_data = {}
+    for k in dpGraph:
+        cb_data[k] = (getMutationsfromDisease_union(dpGraph, pmGraph, k), getMutationsfromDisease_intersect(dpGraph, pmGraph, k))
+    relation = getRelation(cb_data, ds_data)
+    for k, v in dpGraph.items():
+        disease = k
+        npatients = len(v)
+        cb_mutations = cb_data[k][0]
+        cb_nmutations = len(cb_data[k][0])
+        common_mutations = cb_data[k][1]
+        ds_mutations = ds_data[k]
+        ds_nmutations = len(ds_data[k])
+        common = cb_mutations.intersection(ds_mutations)
+        result = relation[k]
+        df2.loc[len(df2)] = [disease, npatients, cb_mutations, cb_nmutations, common_mutations, ds_mutations, ds_nmutations, common, result]
+    
+    df2.to_excel('all_data.xlsx', index=False)
+
+def genesData_toExcel(dpGraph, pmGraph, ds_data, min_percentage = None):
+    df = pd.DataFrame(columns=['Gene'])
+    for disease in dpGraph:
+        percentages = getMutationsfromDisease_percentage(dpGraph, pmGraph, disease)
+        for m, v in percentages:
+            if (min_percentage):
+                if v < min_percentage:
+                    continue
+            if m in ds_data[disease]:
+                flag = 'X'
+            else:
+                flag = 'V'
+            if m not in df['Gene'].values:
+                df.loc[len(df), 'Gene'] = m
+            df.loc[df['Gene'] == m, (disease + ' (%)')] = (str(v) + ' - ' + flag)
+
+    df.to_excel('genes_data.xlsx', index=False)
 
 def main():
     start = time.time()
-    #disease = 'Ovarian Cancer'
-    #dpGraph = build_dpGraph(studyId)
-    #pmGraph = build_pmGraph()
-    #m_union = getMutationsfromDisease_union(dpGraph, pmGraph, disease)
-    #m_intersect = getMutationsfromDisease_intersect(dpGraph, pmGraph, disease)
-    #print(m_union)
-    #print(m_intersect)
-    dpGraph = {'Ovarian Cancer': ['DO46336', 'DO46360', 'DO46382', 'DO46394', 'DO46493', 'DO46560'], 
-               'Renal Cell Carcinoma': ['DO47243'], 
-               'Pancreatic Cancer': ['DO48539', 'DO49183', 'DO51180', 'DO51187', 'DO221544', 'DO52123', 'DO52129', 'DO52132', 'DO52136', 'DO52137', 'DO52151', 'DO52159', 'DO52161', 'DO52164', 'DO32976', 'DO35132'], 
-               'Hepatobiliary Cancer': ['DO48717', 'DO48738', 'DO50778', 'DO50780', 'DO50785', 'DO50793', 'DO50806', 'DO50842', 'DO50844', 'DO217864', 'DO218491', 'DO218535', 'DO218695', 'DO23520', 'DO23525', 'DO23529', 'DO23530', 'DO45092', 'DO45131', 'DO45193', 'DO45209', 'DO45221', 'DO45223', 'DO45281', 'DO45297', 'DO45305', 'DO45307'], 
-               'Esophagogastric Cancer': ['DO50316', 'DO50321', 'DO50440', 'DO50447', 'DO50409', 'DO50411', 'DO50330', 'DO50337', 'DO50342', 'DO50354', 'DO50383', 'DO50336', 'DO50436', 'DO224498', 'DO217814', 'DO218442', 'DO217817', 'DO218487', 'DO222288', 'DO218443', 'DO217822', 'DO218223'], 
-               'Prostate Cancer': ['DO52516'], 
-               'Head and Neck Cancer': ['DO217836', 'DO217950', 'DO218012', 'DO218075', 'DO218180', 'DO218211', 'DO218280', 'DO218554', 'DO218697', 'DO218773'], 
-               'Melanoma': ['DO220864', 'DO220883', 'DO220878', 'DO220879', 'DO220874', 'DO220875', 'DO220894', 'DO220877', 'DO220898', 'DO220899', 'DO220901', 'DO220902', 'DO220903', 'DO220904', 'DO220905', 'DO220906', 'DO220907', 'DO220908', 'DO220909', 'DO220910', 'DO220911', 'DO220912', 'DO220913']}
-    df = pd.DataFrame(columns = ['Patient', 'Disease'])
-    df.loc[len(df)] = ['Davide', 'Cancro']
-    print(df)
+    associations = {'Uterine Carcinosarcoma/Uterine Malignant Mixed Mullerian Tumor' : ['ucs_tcga_pan_can_atlas_2018', 'ucs_tcga_pan_can_atlas_2018_mutations', 'ucs_tcga_pan_can_atlas_2018_all']}
+                    #'Cervical Squamous Cell Carcinoma' : ['pancan_pcawg_2020', 'pancan_pcawg_2020_mutations', 'pancan_pcawg_2020_all'],
+                    #'Pancreatic Adenocarcinoma' : ['paad_tcga_pan_can_atlas_2018', 'paad_tcga_pan_can_atlas_2018_mutations', 'paad_tcga_pan_can_atlas_2018_all'], 
+                    #'Hepatocellular Carcinoma' : ['hcc_mskimpact_2018', 'hcc_mskimpact_2018_mutations', 'hcc_mskimpact_2018_all'], 
+                    #'Gallbladder Cancer' : ['gbc_msk_2018', 'gbc_msk_2018_mutations', 'gbc_msk_2018_all']}
+    
+    #build_dpGraph(associations)
+    #build_pmGraph(associations)
+    ds_data = getDisgenetData()
+    dpGraph, pmGraph = getCbData()
+    #cb_toExcel(dpGraph, pmGraph)
+    #cb_common_toExcel(dpGraph, pmGraph)
+    #allData_toExcel(dpGraph, pmGraph, ds_data)
+    genesData_toExcel(dpGraph, pmGraph, ds_data, 10)
     print("----------", round(time.time() - start, 2), "seconds ----------") # print the execution time
 
 if __name__ == "__main__":
