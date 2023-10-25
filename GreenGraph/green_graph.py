@@ -276,15 +276,15 @@ def main():
                     #'Pancreatic Adenocarcinoma' : ['paad_tcga_pan_can_atlas_2018', 'paad_tcga_pan_can_atlas_2018_mutations', 'paad_tcga_pan_can_atlas_2018_all'], 
                     #'Hepatocellular Carcinoma' : ['hcc_mskimpact_2018', 'hcc_mskimpact_2018_mutations', 'hcc_mskimpact_2018_all'], 
                     #'Gallbladder Cancer' : ['gbc_msk_2018', 'gbc_msk_2018_mutations', 'gbc_msk_2018_all']}
-    
     #build_dpGraph(associations)
     #build_pmGraph(associations)
-    ds_data = getDisgenetData()
-    dpGraph, pmGraph = getCbData()
+    #ds_data = getDisgenetData()
+    #dpGraph, pmGraph = getCbData()
     #cb_toExcel(dpGraph, pmGraph)
     #cb_common_toExcel(dpGraph, pmGraph)
     #allData_toExcel(dpGraph, pmGraph, ds_data)
-    genesData_toExcel(dpGraph, pmGraph, ds_data, 10)
+    #genesData_toExcel(dpGraph, pmGraph, ds_data)
+    #df.to_excel('data_clinical_sample.xlsx')
     print("----------", round(time.time() - start, 2), "seconds ----------") # print the execution time
 
 if __name__ == "__main__":
