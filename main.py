@@ -7,27 +7,29 @@ import matplotlib.pyplot as plt # plotting
 # output: dataframe con i dati dei pazienti
 def get_PatientData(studyId):
     df = pd.DataFrame()
-    path = f'{studyId}/data_clinical_patient.txt'
+    path = f'data sets/{studyId}/data_clinical_patient.txt'
     if op.isfile(path):
         df = pd.read_csv(path, sep='\t', skiprows=4)
+        df.drop_duplicates('PATIENT_ID', inplace=True)
 
     return df
 
 # output: dataframe con i dati dei samples
 def get_SampleData(studyId):
     df = pd.DataFrame()
-    path = f'{studyId}/data_clinical_sample.txt'
+    path = f'data sets/{studyId}/data_clinical_sample.txt'
     if op.isfile(path):
         df = pd.read_csv(path, sep='\t', skiprows=4)
+        df.drop_duplicates(['SAMPLE_ID', 'PATIENT_ID'], inplace=True)
 
     return df
 
 # output: dataframe con i dati delle mutazioni
 def get_MutationData(studyId):
     df = pd.DataFrame()
-    path = f'{studyId}/data_mutations.txt'
+    path = f'data sets/{studyId}/data_mutations.txt'
     if op.isfile(path):
-        df = pd.read_csv(f'{studyId}/data_mutations.txt', sep='\t', skiprows=2)
+        df = pd.read_csv(path, sep='\t')
         df.drop_duplicates(['Hugo_Symbol', 'Chromosome', 'Start_Position', 'End_Position', 'Tumor_Sample_Barcode'], inplace=True)
 
     return df
@@ -35,9 +37,9 @@ def get_MutationData(studyId):
 # output: dataframe con i dati dei trattamenti
 def get_TreatmentData(studyId):
     df = pd.DataFrame()
-    path = f'{studyId}/data_timeline_treatment.txt'
+    path = f'data sets{studyId}/data_timeline_treatment.txt'
     if op.isfile(path):
-        df = pd.read_csv(f'{studyId}/data_timeline_treatment.txt', sep='\t')
+        df = pd.read_csv(path, sep='\t')
 
     return df
 
@@ -59,8 +61,13 @@ def build_DiPGraph(full_data):
     return graph
 
 # output: lista degli archi P -> M (pazienti -> mutazioni)
-def build_PMGraph(full_data):
+def build_PMGraph(full_data, patient_data, sample_data):
     graph = nx.from_pandas_edgelist(full_data, source='PATIENT_ID', target='MUTATION', create_using=nx.DiGraph())
+
+    dp = patient_data.set_index('PATIENT_ID').to_dict('index')
+    ds = sample_data.set_index('PATIENT_ID').to_dict('index')
+    nx.set_node_attributes(graph, dp)
+    nx.set_node_attributes(graph, ds)
 
     return graph
 
@@ -77,15 +84,14 @@ def get_PNodes(pm_graph):
     return P
 
 # output: lista dei nodi M
-def get_MNodes(PM_graph):
-    M = [node for node, degree in PM_graph.out_degree() if degree == 0]
+def get_MNodes(pm_graph):
+    M = [node for node, degree in pm_graph.out_degree() if degree == 0]
 
     return M
 
 # output: dataframe con ogni mutazione legata alla malattia in input con il numero di pazienti in cui compare
-def getMutations_fromDisease(dip_graph, pm_graph, disease):
-    npatients = dip_graph.degree(disease)
-    col_name = f'Frequenza (su {npatients} pazienti)'
+def getMutations_fromDisease(dip_graph, pm_graph, disease, mcount):
+    col_name = 'Count'
     dcount = {}
     for p in dip_graph.neighbors(disease):
         for m in pm_graph.neighbors(p):
@@ -94,12 +100,14 @@ def getMutations_fromDisease(dip_graph, pm_graph, disease):
             else:
                 dcount[m] = 1
     mutations_count = dict(sorted(dcount.items(), key=lambda x: x[1], reverse=True))
-    mutations_df = pd.DataFrame(list(mutations_count.items()), columns=['Mutazione', col_name])
-    mutations_df['%'] = mutations_df.apply(lambda row: round((row[col_name] / npatients) * 100), axis=1)
+    mutations_df = pd.DataFrame(list(mutations_count.items()), columns=['Mutation', col_name])
+    mutations_df['Frequency (%)'] = mutations_df.apply(lambda row: round((row[col_name] / mcount) * 100), axis=1)
 
     return mutations_df
 
-def clustering(pm_graph, full_data):
+def clustering(pm_graph, cl_attributes):
+
+    # clustering algorithm
     pnodes = get_PNodes(pm_graph)
     clusters = {}
     for p in pnodes:
@@ -116,21 +124,30 @@ def clustering(pm_graph, full_data):
             clusters[mutations] = {p}
 
     clusters = dict(sorted(clusters.items(), key=lambda item: len(item[1]), reverse=True))
-    cluster_dfs = {}
+    
+    # building the cluster dataframes for visualization
     cc = 0
+    cluster_dfs = {}
+    cl_model = {'PATIENT' : []}
+    for attr in cl_attributes:
+        if nx.get_node_attributes(pm_graph, attr):
+            cl_model[attr] = []
+
     for k, v in clusters.items():
         if len(v) > 1:
-            cl_data = {'Paziente': [], 'Malattia': []}
-            mut_data = {'Mutazione' : []}
+            cl_data = cl_model
+            mut_data = {'MUTATION' : []}
             
             for p in v:
-                disease = full_data.loc[full_data['PATIENT_ID'] == p, 'CANCER_TYPE_DETAILED'].values[0]
-                cl_data['Paziente'].append(p)
-                cl_data['Malattia'].append(disease)
+                for attr in cl_data.keys():
+                    if attr == 'PATIENT':
+                        cl_data[attr].append(p)
+                    else:
+                        cl_data[attr] = pm_graph.nodes[p][attr]
             cl_df = pd.DataFrame(cl_data)
 
             for m in k:
-                mut_data['Mutazione'].append(m)
+                mut_data['MUTATION'].append(m)
             mut_df = pd.DataFrame(mut_data)
             cluster_dfs[cc] = [cl_df, mut_df]
             cc += 1
