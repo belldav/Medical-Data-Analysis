@@ -2,6 +2,7 @@ import os.path as op
 import numpy as np      # array e operazioni numeriche veloci
 import pandas as pd     # dataframe per enorme raccolta dati
 import networkx as nx   # grafi efficienti e visualizzabili
+import copy
 import matplotlib.pyplot as plt # plotting
 
 # output: dataframe con i dati dei pazienti
@@ -64,10 +65,10 @@ def build_DiPGraph(full_data):
 def build_PMGraph(full_data, patient_data, sample_data):
     graph = nx.from_pandas_edgelist(full_data, source='PATIENT_ID', target='MUTATION', create_using=nx.DiGraph())
 
-    dp = patient_data.set_index('PATIENT_ID').to_dict('index')
-    ds = sample_data.set_index('PATIENT_ID').to_dict('index')
-    nx.set_node_attributes(graph, dp)
-    nx.set_node_attributes(graph, ds)
+    ps_data = pd.merge(patient_data, sample_data, left_on='PATIENT_ID', right_on='PATIENT_ID')
+    ps_data.drop_duplicates('PATIENT_ID', inplace=True)
+    attrs = ps_data.set_index('PATIENT_ID').to_dict('index')
+    nx.set_node_attributes(graph, attrs)
 
     return graph
 
@@ -79,7 +80,8 @@ def get_DiNodes(dip_graph):
 
 # output: lista dei nodi P
 def get_PNodes(pm_graph):
-    P = [node for node, degree in pm_graph.in_degree() if degree == 0]
+    pt = [(node, degree) for node, degree in pm_graph.out_degree() if degree != 0]
+    P = [n for n, d in sorted(pt, key=lambda item: item[1], reverse=True)]
 
     return P
 
@@ -105,54 +107,46 @@ def getMutations_fromDisease(dip_graph, pm_graph, disease, mcount):
 
     return mutations_df
 
-def clustering(pm_graph, cl_attributes):
+# calculate similarity between two mutation sets
+def cluster_similarity(mutations1, mutations2):
+    common_mutations = mutations1 & mutations2
+    all_mutations = mutations1 | mutations2
+    s = len(common_mutations) / len(all_mutations)
+    return s
+
+def clustering(pm_graph, threshold=1):
 
     # clustering algorithm
-    pnodes = get_PNodes(pm_graph)
+    patients = get_PNodes(pm_graph)
     clusters = {}
-    for p in pnodes:
-        mutations = frozenset(n for n in pm_graph.neighbors(p))
+    cc = 0
+    for p in patients:
+        mutations = set(m for m in pm_graph.neighbors(p))
         cluster_found = False
 
-        for cl_mutations, cl_patients in clusters.items():
-            if mutations == cl_mutations:
-                cl_patients.add(p)
+        for cl_number, cl_patients in clusters.items():
+            cl_leader = cl_patients[0]
+            leader_mutations = set(m for m in pm_graph.neighbors(cl_leader))
+            similarity = cluster_similarity(mutations, leader_mutations)
+            if similarity >= threshold:
+                cl_patients.append(p)
                 cluster_found = True
                 break
         
         if not cluster_found:
-            clusters[mutations] = {p}
-
-    clusters = dict(sorted(clusters.items(), key=lambda item: len(item[1]), reverse=True))
-    
-    # building the cluster dataframes for visualization
-    cc = 0
-    cluster_dfs = {}
-    cl_model = {'PATIENT' : []}
-    for attr in cl_attributes:
-        if nx.get_node_attributes(pm_graph, attr):
-            cl_model[attr] = []
-
-    for k, v in clusters.items():
-        if len(v) > 1:
-            cl_data = cl_model
-            mut_data = {'MUTATION' : []}
-            
-            for p in v:
-                for attr in cl_data.keys():
-                    if attr == 'PATIENT':
-                        cl_data[attr].append(p)
-                    else:
-                        cl_data[attr] = pm_graph.nodes[p][attr]
-            cl_df = pd.DataFrame(cl_data)
-
-            for m in k:
-                mut_data['MUTATION'].append(m)
-            mut_df = pd.DataFrame(mut_data)
-            cluster_dfs[cc] = [cl_df, mut_df]
+            clusters[cc] = [p]
             cc += 1
 
-    return cluster_dfs
+    # sorting clusters and deleting those with just one patient
+    clusters = dict(sorted(clusters.items(), key=lambda item: len(item[1]), reverse=True))
+    final_clusters = {}
+    cc = 0
+    for n, patients in clusters.items():
+        if len(patients) > 1:
+            final_clusters[cc] = patients
+            cc += 1
+    
+    return final_clusters
 
 def main():
     return 0
