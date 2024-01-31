@@ -1,6 +1,5 @@
 import os.path as op
-import numpy as np      # array e operazioni numeriche veloci
-import pandas as pd     # dataframe per enorme raccolta dati
+import pandas as pd     # dataframe per raccolta e analisi dati
 import networkx as nx   # grafi efficienti e visualizzabili
 import copy
 import matplotlib.pyplot as plt # plotting
@@ -57,7 +56,7 @@ def get_FullData(sample_data, mutation_data):
 
 # output: lista degli archi Di -> P (malattie -> pazienti)
 def build_DiPGraph(full_data):
-    graph = nx.from_pandas_edgelist(full_data, source='CANCER_TYPE', target='PATIENT_ID', create_using=nx.DiGraph())
+    graph = nx.from_pandas_edgelist(full_data, source='CANCER_TYPE_DETAILED', target='PATIENT_ID', create_using=nx.DiGraph())
 
     return graph
 
@@ -107,7 +106,7 @@ def getMutations_fromDisease(dip_graph, pm_graph, disease, mcount):
 
     return mutations_df
 
-# calculate similarity between two mutation sets
+# calcola la similaritá tra due insiemi di mutazioni
 def cluster_similarity(mutations1, mutations2):
     common_mutations = mutations1 & mutations2
     all_mutations = mutations1 | mutations2
@@ -116,28 +115,30 @@ def cluster_similarity(mutations1, mutations2):
 
 def clustering(pm_graph, threshold=1):
 
-    # clustering algorithm
+    # algoritmo di clustering
     patients = get_PNodes(pm_graph)
     clusters = {}
     cc = 0
     for p in patients:
         mutations = set(m for m in pm_graph.neighbors(p))
         cluster_found = False
-
         for cl_number, cl_patients in clusters.items():
-            cl_leader = cl_patients[0]
-            leader_mutations = set(m for m in pm_graph.neighbors(cl_leader))
-            similarity = cluster_similarity(mutations, leader_mutations)
-            if similarity >= threshold:
+            cluster_found = True
+            for clp in cl_patients:
+                clp_mutations = set(m for m in pm_graph.neighbors(clp))
+                similarity = cluster_similarity(mutations, clp_mutations)
+                if similarity < threshold:
+                    cluster_found = False
+                    break
+            if cluster_found:
                 cl_patients.append(p)
-                cluster_found = True
                 break
-        
+    
         if not cluster_found:
             clusters[cc] = [p]
             cc += 1
 
-    # sorting clusters and deleting those with just one patient
+    # ordina i clusters ed elimina quelli formati da un solo paziente
     clusters = dict(sorted(clusters.items(), key=lambda item: len(item[1]), reverse=True))
     final_clusters = {}
     cc = 0
