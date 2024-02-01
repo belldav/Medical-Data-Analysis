@@ -19,7 +19,7 @@ def get_SampleData(studyId):
     df = pd.DataFrame()
     path = f'data sets/{studyId}/data_clinical_sample.txt'
     if op.isfile(path):
-        df = pd.read_csv(path, sep='\t', skiprows=4)
+        df = pd.read_csv(path, sep='\t')
         df.drop_duplicates(['SAMPLE_ID', 'PATIENT_ID'], inplace=True)
 
     return df
