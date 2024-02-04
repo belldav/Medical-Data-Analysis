@@ -66,6 +66,7 @@ def build_PMGraph(full_data, patient_data, sample_data):
 
     ps_data = pd.merge(patient_data, sample_data, left_on='PATIENT_ID', right_on='PATIENT_ID')
     ps_data.drop_duplicates('PATIENT_ID', inplace=True)
+    ps_data.astype(str)
     attrs = ps_data.set_index('PATIENT_ID').to_dict('index')
     nx.set_node_attributes(graph, attrs)
 
