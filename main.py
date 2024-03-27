@@ -43,6 +43,17 @@ def get_TreatmentData(studyId):
 
     return df
 
+# output: dataframe dei dati sui farmaci
+def get_DrugsData():
+    df = pd.DataFrame()
+    path = 'geni_farmaci.xls'
+    if op.isfile(path):
+        df = pd.read_excel(path)
+        df.dropna(subset='Farmaci si/no', inplace=True)
+        df.reset_index(drop=True, inplace=True)
+    
+    return df
+
 # output: dataframe con i dati completi (paziente, malattia, mutazioni)
 def get_FullData(sample_data, mutation_data):
     if (sample_data.empty or mutation_data.empty):
@@ -108,12 +119,15 @@ def getMutations_fromDisease(dip_graph, pm_graph, disease, mcount):
     return mutations_df
 
 # calcola la similaritá tra due insiemi di mutazioni
-def cluster_similarity(mutations1, mutations2):
-    common_mutations = mutations1 & mutations2
-    all_mutations = mutations1 | mutations2
+def cluster_similarity(pm_graph, patient1, patient2):
+    p1_mutations = set(m for m in pm_graph.neighbors(patient1))
+    p2_mutations = set(m for m in pm_graph.neighbors(patient2))
+    common_mutations = p1_mutations & p2_mutations
+    all_mutations = p1_mutations | p2_mutations
     s = len(common_mutations) / len(all_mutations)
     return s
 
+# algoritmo per clusterizzare i pazienti in base alle mutazioni comuni
 def clustering(pm_graph, threshold=1):
 
     # algoritmo di clustering
@@ -121,13 +135,11 @@ def clustering(pm_graph, threshold=1):
     clusters = {}
     cc = 0
     for p in patients:
-        mutations = set(m for m in pm_graph.neighbors(p))
         cluster_found = False
         for cl_number, cl_patients in clusters.items():
             cluster_found = True
             for clp in cl_patients:
-                clp_mutations = set(m for m in pm_graph.neighbors(clp))
-                similarity = cluster_similarity(mutations, clp_mutations)
+                similarity = cluster_similarity(pm_graph, p, clp)
                 if similarity < threshold:
                     cluster_found = False
                     break
