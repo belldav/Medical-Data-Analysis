@@ -62,6 +62,7 @@ def get_FullData(sample_data, mutation_data):
         full_data = pd.merge(sample_data, mutation_data, left_on='SAMPLE_ID', right_on='Tumor_Sample_Barcode')
         full_data = full_data.astype(str)
         full_data['MUTATION'] = full_data[['Hugo_Symbol', 'Chromosome', 'Start_Position', 'End_Position']].agg('_'.join, axis='columns')
+        #full_data['VAF'] = full_data['t_alt_count'] / (full_data['t_alt_count'] + full_data['t_ref_count']) * 100
     
     return full_data
 
