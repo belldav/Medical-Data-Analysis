@@ -103,21 +103,81 @@ def get_MNodes(pm_graph):
 
     return M
 
+#output: dataframe con ogni malattia e rispettivo numero di pazienti affetti
+def show_diseases(dip_graph):
+    diseases = get_DiNodes(dip_graph)
+    df0 = {'DISEASE' : [], 'PATIENT COUNT' : []}
+    for di in diseases:
+        pcnt = len(set(p for p in dip_graph.neighbors(di)))
+        df0['DISEASE'].append(di)
+        df0['PATIENT COUNT'].append(pcnt)
+    df = pd.DataFrame(df0)
+    df.sort_values(by='PATIENT COUNT', ascending=False, inplace=True)
+    df.reset_index(drop=True, inplace=True)
+
+    return df
+
+def view_disease(dip_graph, pm_graph, disease):
+    df0 = {'PATIENT_ID' : [], 'MUTATION COUNT': [], 'SURVIVAL RATE': [], 'SURVIVAL STATUS': []}
+    for p in dip_graph.neighbors(disease):
+        df0['PATIENT_ID'].append(p)
+        mut_cnt = len(set(m for m in pm_graph.neighbors(p)))
+        df0['MUTATION COUNT'].append(mut_cnt)
+        df0['SURVIVAL RATE'].append(pm_graph.nodes[p]['OS_MONTHS'])
+        df0['SURVIVAL STATUS'].append(pm_graph.nodes[p]['OS_STATUS'])
+    df = pd.DataFrame(df0)
+
+    return df
+
 # output: dataframe con ogni mutazione legata alla malattia in input con il numero di pazienti in cui compare
-def getMutations_fromDisease(dip_graph, pm_graph, disease, mcount):
+def getMutations_fromDisease(dip_graph, pm_graph, disease):
+    pcnt = dip_graph.degree(disease)
     col_name = 'Count'
-    dcount = {}
+    dc = {}
     for p in dip_graph.neighbors(disease):
         for m in pm_graph.neighbors(p):
-            if m in dcount:
-                dcount[m] += 1
+            if m in dc:
+                dc[m] += 1
             else:
-                dcount[m] = 1
-    mutations_count = dict(sorted(dcount.items(), key=lambda x: x[1], reverse=True))
-    mutations_df = pd.DataFrame(list(mutations_count.items()), columns=['Mutation', col_name])
-    mutations_df['Frequency (%)'] = mutations_df.apply(lambda row: round((row[col_name] / mcount) * 100), axis=1)
+                dc[m] = 1
+    dc_sorted = dict(sorted(dc.items(), key=lambda x: x[1], reverse=True))
+    df = pd.DataFrame(list(dc_sorted.items()), columns=['Mutation', col_name])
+    df['Frequency (%)'] = df.apply(lambda row: round((row[col_name] / pcnt) * 100, 1), axis=1)
+    df['Gene'] = df.apply(lambda row: row['Mutation'].split('_')[0], axis=1)
+    df = df[['Gene', 'Mutation', 'Count', 'Frequency (%)']]
 
-    return mutations_df
+    return df
+
+def getGenes_fromDisease(dip_graph, pm_graph, disease):
+    pcnt = dip_graph.degree(disease)
+    col_name = 'Count'
+    dc = {}
+    for p in dip_graph.neighbors(disease):
+        pgenes = set()
+        for m in pm_graph.neighbors(p):
+            gene = m.split('_')[0]
+            pgenes.add(gene)
+        for gene in pgenes:
+            if gene in dc:
+                dc[gene] += 1
+            else:
+                dc[gene] = 1
+    df = pd.DataFrame(list(dc.items()), columns=['Gene', col_name])
+    df['Frequency (%)'] = df.apply(lambda row: round((row[col_name] / pcnt) * 100, 1), axis=1)
+
+    return df
+
+def getGeneMutations_fromDisease(dip_graph, pm_graph, disease):
+    pcnt = dip_graph.degree(disease)
+    col_name = 'Count'
+    dc = {}
+    for p in dip_graph.neighbors(disease):
+        for m in pm_graph.neighbors(p):
+            gene = m.split('_')[0]
+            if gene in dc:
+                dc[gene] += 1
+            else:
+                dc[gene] = 1
 
 # calcola la similaritá tra due insiemi di mutazioni
 def cluster_similarity(pm_graph, patient1, patient2):
