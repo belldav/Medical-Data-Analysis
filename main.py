@@ -117,9 +117,18 @@ def show_diseases(dip_graph):
 
     return df
 
-def view_disease(dip_graph, pm_graph, disease):
-    df0 = {'PATIENT_ID' : [], 'MUTATION COUNT': [], 'SURVIVAL RATE': [], 'SURVIVAL STATUS': []}
+def getPatients_fromDisease(dip_graph, pm_graph, disease, kmin, kmax):
+    patients = []
     for p in dip_graph.neighbors(disease):
+        sr = pm_graph.nodes[p]['OS_MONTHS']
+        if (sr >= kmin and sr <= kmax):
+            patients.append(p)
+    
+    return patients
+
+def view_patients(pm_graph, patients):
+    df0 = {'PATIENT_ID' : [], 'MUTATION COUNT': [], 'SURVIVAL RATE': [], 'SURVIVAL STATUS': []}
+    for p in patients:
         df0['PATIENT_ID'].append(p)
         mut_cnt = len(set(m for m in pm_graph.neighbors(p)))
         df0['MUTATION COUNT'].append(mut_cnt)
@@ -130,11 +139,11 @@ def view_disease(dip_graph, pm_graph, disease):
     return df
 
 # output: dataframe con ogni mutazione legata alla malattia in input con il numero di pazienti in cui compare
-def getMutations_fromDisease(dip_graph, pm_graph, disease):
-    pcnt = dip_graph.degree(disease)
+def getMutations_fromPatients(pm_graph, patients):
+    pcnt = len(patients)
     col_name = 'Count'
     dc = {}
-    for p in dip_graph.neighbors(disease):
+    for p in patients:
         for m in pm_graph.neighbors(p):
             if m in dc:
                 dc[m] += 1
@@ -148,11 +157,11 @@ def getMutations_fromDisease(dip_graph, pm_graph, disease):
 
     return df
 
-def getGenes_fromDisease(dip_graph, pm_graph, disease):
-    pcnt = dip_graph.degree(disease)
+def getGenes_fromPatients(pm_graph, patients):
+    pcnt = len(patients)
     col_name = 'Count'
     dc = {}
-    for p in dip_graph.neighbors(disease):
+    for p in patients:
         pgenes = set()
         for m in pm_graph.neighbors(p):
             gene = m.split('_')[0]
@@ -166,18 +175,6 @@ def getGenes_fromDisease(dip_graph, pm_graph, disease):
     df['Frequency (%)'] = df.apply(lambda row: round((row[col_name] / pcnt) * 100, 1), axis=1)
 
     return df
-
-def getGeneMutations_fromDisease(dip_graph, pm_graph, disease):
-    pcnt = dip_graph.degree(disease)
-    col_name = 'Count'
-    dc = {}
-    for p in dip_graph.neighbors(disease):
-        for m in pm_graph.neighbors(p):
-            gene = m.split('_')[0]
-            if gene in dc:
-                dc[gene] += 1
-            else:
-                dc[gene] = 1
 
 # calcola la similaritá tra due insiemi di mutazioni
 def cluster_similarity(pm_graph, patient1, patient2):
