@@ -106,42 +106,56 @@ def get_MNodes(pm_graph):
 #output: dataframe con ogni malattia e rispettivo numero di pazienti affetti
 def show_diseases(dip_graph):
     diseases = get_DiNodes(dip_graph)
-    df0 = {'DISEASE' : [], 'PATIENT COUNT' : []}
+    df0 = {'Malattia' : [], '# Pazienti' : []}
     for di in diseases:
         pcnt = len(set(p for p in dip_graph.neighbors(di)))
-        df0['DISEASE'].append(di)
-        df0['PATIENT COUNT'].append(pcnt)
+        df0['Malattia'].append(di)
+        df0['# Pazienti'].append(pcnt)
     df = pd.DataFrame(df0)
-    df.sort_values(by='PATIENT COUNT', ascending=False, inplace=True)
+    df.sort_values(by='# Pazienti', ascending=False, inplace=True)
     df.reset_index(drop=True, inplace=True)
 
     return df
 
-def getPatients_fromDisease(dip_graph, pm_graph, disease, kmin, kmax):
-    patients = []
-    for p in dip_graph.neighbors(disease):
-        sr = pm_graph.nodes[p]['OS_MONTHS']
-        if (sr >= kmin and sr <= kmax):
-            patients.append(p)
-    
-    return patients
-
-def view_patients(pm_graph, patients):
-    df0 = {'PATIENT_ID' : [], 'MUTATION COUNT': [], 'SURVIVAL RATE': [], 'SURVIVAL STATUS': []}
+def getPatients_fromDisease(dip_graph, pm_graph, disease, kmin, kmax, genes, status, no_check):
+    selected_patients = []
+    patients = get_PNodes(pm_graph)
+    if disease != 'all':
+        patients = dip_graph.neighbors(disease)
     for p in patients:
-        df0['PATIENT_ID'].append(p)
+        if no_check == True:
+            selected_patients.append(p)
+            continue
+        sr = pm_graph.nodes[p]['OS_MONTHS']
+        st = pm_graph.nodes[p]['OS_STATUS']
+        pgenes = set()
+        for m in pm_graph.neighbors(p):
+            gene = m.split('_')[0]
+            pgenes.add(gene)
+        if (sr >= kmin and sr <= kmax) and (genes.issubset(pgenes)) and (status == 'all' or status == st):
+                selected_patients.append(p)
+    
+    return selected_patients
+
+def view_patients(pm_graph, patients, sort_by='Survival rate'):
+    df0 = {'ID Paziente' : [], 'Malattia': [], '# Mutazioni': [], 'Survival rate': [], 'Survival status': []}
+    for p in patients:
+        df0['ID Paziente'].append(p)
+        df0['Malattia'].append(pm_graph.nodes[p]['CANCER_TYPE_DETAILED'])
         mut_cnt = len(set(m for m in pm_graph.neighbors(p)))
-        df0['MUTATION COUNT'].append(mut_cnt)
-        df0['SURVIVAL RATE'].append(pm_graph.nodes[p]['OS_MONTHS'])
-        df0['SURVIVAL STATUS'].append(pm_graph.nodes[p]['OS_STATUS'])
+        df0['# Mutazioni'].append(mut_cnt)
+        df0['Survival rate'].append(pm_graph.nodes[p]['OS_MONTHS'])
+        df0['Survival status'].append(pm_graph.nodes[p]['OS_STATUS'])
     df = pd.DataFrame(df0)
+
+    df.sort_values(by=sort_by, ascending=False, inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    df = df.round({'Survival rate': 0})
 
     return df
 
-# output: dataframe con ogni mutazione legata alla malattia in input con il numero di pazienti in cui compare
-def getMutations_fromPatients(pm_graph, patients):
+def getMutations_fromPatients(pm_graph, patients, sort_by='# Pazienti'):
     pcnt = len(patients)
-    col_name = 'Count'
     dc = {}
     for p in patients:
         for m in pm_graph.neighbors(p):
@@ -149,17 +163,19 @@ def getMutations_fromPatients(pm_graph, patients):
                 dc[m] += 1
             else:
                 dc[m] = 1
-    dc_sorted = dict(sorted(dc.items(), key=lambda x: x[1], reverse=True))
-    df = pd.DataFrame(list(dc_sorted.items()), columns=['Mutation', col_name])
-    df['Frequency (%)'] = df.apply(lambda row: round((row[col_name] / pcnt) * 100, 1), axis=1)
-    df['Gene'] = df.apply(lambda row: row['Mutation'].split('_')[0], axis=1)
-    df = df[['Gene', 'Mutation', 'Count', 'Frequency (%)']]
+    #dc_sorted = dict(sorted(dc.items(), key=lambda x: x[1], reverse=True))
+    df = pd.DataFrame(list(dc.items()), columns=['Mutazione', '# Pazienti'])
+    df['% Pazienti'] = df.apply(lambda row: round((row['# Pazienti'] / pcnt) * 100, 1), axis=1)
+    df['Gene'] = df.apply(lambda row: row['Mutazione'].split('_')[0], axis=1)
+    df = df[['Gene', 'Mutazione', '# Pazienti', '% Pazienti']]
+
+    df.sort_values(by=sort_by, ascending=False, inplace=True)
+    df.reset_index(drop=True, inplace=True)
 
     return df
 
-def getGenes_fromPatients(pm_graph, patients):
+def getGenes_fromPatients(pm_graph, patients, sort_by='# Pazienti'):
     pcnt = len(patients)
-    col_name = 'Count'
     dc = {}
     for p in patients:
         pgenes = set()
@@ -171,8 +187,11 @@ def getGenes_fromPatients(pm_graph, patients):
                 dc[gene] += 1
             else:
                 dc[gene] = 1
-    df = pd.DataFrame(list(dc.items()), columns=['Gene', col_name])
-    df['Frequency (%)'] = df.apply(lambda row: round((row[col_name] / pcnt) * 100, 1), axis=1)
+    df = pd.DataFrame(list(dc.items()), columns=['Gene', '# Pazienti'])
+    df['% Pazienti'] = df.apply(lambda row: round((row['# Pazienti'] / pcnt) * 100, 1), axis=1)
+
+    df.sort_values(by=sort_by, ascending=False, inplace=True)
+    df.reset_index(drop=True, inplace=True)
 
     return df
 
@@ -185,11 +204,24 @@ def cluster_similarity(pm_graph, patient1, patient2):
     s = len(common_mutations) / len(all_mutations)
     return s
 
+def hamming_distance(pm_graph, patient1, patient2):
+    p1_mutations = set(m for m in pm_graph.neighbors(patient1))
+    p2_mutations = set(m for m in pm_graph.neighbors(patient2))
+    common_mutations = p1_mutations & p2_mutations
+    return len(common_mutations)
+
+def jaccard_distance(pm_graph, patient1, patient2):
+    p1_mutations = set(m for m in pm_graph.neighbors(patient1))
+    p2_mutations = set(m for m in pm_graph.neighbors(patient2))
+    common_mutations = p1_mutations & p2_mutations
+    all_mutations = p1_mutations | p2_mutations
+    s = (len(all_mutations) - len(common_mutations)) / len(all_mutations)
+    return s
+
 # algoritmo per clusterizzare i pazienti in base alle mutazioni comuni
-def clustering(pm_graph, threshold=1):
+def clustering(pm_graph, patients, threshold=1):
 
     # algoritmo di clustering
-    patients = get_PNodes(pm_graph)
     clusters = {}
     cc = 0
     for p in patients:
@@ -197,8 +229,8 @@ def clustering(pm_graph, threshold=1):
         for cl_number, cl_patients in clusters.items():
             cluster_found = True
             for clp in cl_patients:
-                similarity = cluster_similarity(pm_graph, p, clp)
-                if similarity < threshold:
+                similarity = jaccard_distance(pm_graph, p, clp)
+                if similarity > threshold:
                     cluster_found = False
                     break
             if cluster_found:
@@ -219,6 +251,10 @@ def clustering(pm_graph, threshold=1):
             cc += 1
     
     return final_clusters
+
+def save_result(df, position, name):
+    if not df.empty:
+        df.to_excel(f'{position}/{name}.xlsx', index=False)
 
 def main():
     return 0
